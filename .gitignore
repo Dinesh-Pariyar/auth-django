@@ -1,0 +1,31 @@
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore migration pycache files
+api/migrations/__pycache__/
+
+
+# Virtual environment
+venv/
+env/
+*.env
+
+# Static and media files
+static/
+media/
+
+# Database files
+db.sqlite3
+
+# Logs
+*.log
+
+# IDE settings
+.vscode/
+.idea/
+
+# System files
+.DS_Store
