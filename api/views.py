@@ -18,6 +18,11 @@ from rest_framework import status
 from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework_simplejwt.exceptions import InvalidToken
 
+from django.conf import settings
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -27,11 +32,10 @@ class RegisterView(generics.CreateAPIView):
     def get_serializer_context(self):
         return {"request": self.request}
 
+        # class LoginView(generics.GenericAPIView):
+        #     serializer_class = LoginSerializer
 
-class LoginView(generics.GenericAPIView):
-    serializer_class = LoginSerializer
-
-    def post(self, request, *args, **kwargs):
+        #     def post(self, request, *args, **kwargs):
         username = request.data.get("username")
         password = request.data.get("password")
 
@@ -69,6 +73,87 @@ class LoginView(generics.GenericAPIView):
             return response
         else:
             return Response({"error": "Invalid Credentials"}, status=401)
+
+
+class LoginView(generics.GenericAPIView):
+    serializer_class = LoginSerializer
+
+    def post(self, request, *args, **kwargs):
+        try:
+            username = request.data.get("username")
+            password = request.data.get("password")
+
+            # Validate input
+            if not username or not password:
+                return Response(
+                    {"error": "Username and password are required"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Authenticate user
+            user = authenticate(username=username, password=password)
+
+            if user is not None:
+                if not user.is_active:
+                    logger.warning(f"Login attempt for inactive user: {username}")
+                    return Response(
+                        {"error": "Account is not active"},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+                # Generate tokens
+                refresh = RefreshToken.for_user(user)
+                user_serializer = UserSerializer(user)
+
+                # Prepare response
+                response = Response(
+                    {"user": user_serializer.data}, status=status.HTTP_200_OK
+                )
+
+                # Token configurations
+                access_token_lifetime = refresh.access_token.lifetime
+                refresh_token_lifetime = refresh.lifetime
+
+                # Set secure cookies
+                response.set_cookie(
+                    key="access_token",
+                    value=str(refresh.access_token),
+                    httponly=True,
+                    secure=settings.SESSION_COOKIE_SECURE,
+                    samesite=settings.SESSION_COOKIE_SAMESITE,
+                    max_age=int(access_token_lifetime.total_seconds()),
+                    domain=settings.SESSION_COOKIE_DOMAIN,
+                )
+
+                response.set_cookie(
+                    key="refresh_token",
+                    value=str(refresh),
+                    httponly=True,
+                    secure=settings.SESSION_COOKIE_SECURE,
+                    samesite=settings.SESSION_COOKIE_SAMESITE,
+                    max_age=int(refresh_token_lifetime.total_seconds()),
+                    domain=settings.SESSION_COOKIE_DOMAIN,
+                )
+
+                # Log successful login
+                logger.info(f"Successful login for user: {username}")
+                return response
+
+            else:
+                # Log failed authentication attempt
+                logger.warning(f"Failed login attempt for username: {username}")
+                return Response(
+                    {"error": "Invalid credentials"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+
+        except Exception as e:
+            # Catch and log any unexpected errors
+            logger.error(f"Login error: {str(e)}")
+            return Response(
+                {"error": "An unexpected error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class LogoutView(generics.GenericAPIView):
