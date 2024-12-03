@@ -43,24 +43,10 @@ class LoginView(generics.GenericAPIView):
             username = request.data.get("username")
             password = request.data.get("password")
 
-            # Validate input
-            if not username or not password:
-                return Response(
-                    {"error": "Username and password are required"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
             # Authenticate user
             user = authenticate(username=username, password=password)
 
             if user is not None:
-                if not user.is_active:
-                    logger.warning(f"Login attempt for inactive user: {username}")
-                    return Response(
-                        {"error": "Account is not active"},
-                        status=status.HTTP_403_FORBIDDEN,
-                    )
-
                 # Generate tokens
                 refresh = RefreshToken.for_user(user)
                 user_serializer = UserSerializer(user)
@@ -70,55 +56,31 @@ class LoginView(generics.GenericAPIView):
                     {"user": user_serializer.data}, status=status.HTTP_200_OK
                 )
 
-                # Token configurations
                 access_token_lifetime = refresh.access_token.lifetime
                 refresh_token_lifetime = refresh.lifetime
-
-                # Set secure cookies
-                # response.set_cookie(
-                #     key="access_token",
-                #     value=str(refresh.access_token),
-                #     httponly=True,
-                #     secure=settings.SESSION_COOKIE_SECURE,
-                #     samesite=settings.SESSION_COOKIE_SAMESITE,
-                #     max_age=int(access_token_lifetime.total_seconds()),
-                #     domain=settings.SESSION_COOKIE_DOMAIN,
-                # )
-
-                # response.set_cookie(
-                #     key="refresh_token",
-                #     value=str(refresh),
-                #     httponly=True,
-                #     secure=settings.SESSION_COOKIE_SECURE,
-                #     samesite=settings.SESSION_COOKIE_SAMESITE,
-                #     max_age=int(refresh_token_lifetime.total_seconds()),
-                #     domain=settings.SESSION_COOKIE_DOMAIN,
-                # )
 
                 response.set_cookie(
                     key="access_token",
                     value=str(refresh.access_token),
                     httponly=True,
-                    # secure=False,  # Ensure this works for your environment
-                    samesite="Lax",  # Or 'None' for cross-origin scenarios
+                    secure=False,  # Allows HTTP for development
+                    samesite="None",  # Enables cross-origin requests; "Lax" may work for non-cross-origin cases
                     max_age=int(access_token_lifetime.total_seconds()),
-                    domain=settings.SESSION_COOKIE_DOMAIN,
+                    domain=None,  # Only set if needed; defaults to backend's domain
                 )
+                logger.debug(f"Access token set in cookie: {refresh.access_token}")
 
                 response.set_cookie(
                     key="refresh_token",
                     value=str(refresh),
                     httponly=True,
-                    # secure=False,  # Ensure this works for your environment
-                    samesite="Lax",  # Or 'None' for cross-origin scenarios
+                    secure=False,  # Allows HTTP for development
+                    samesite="None",  # Enables cross-origin requests; "Lax" may work for non-cross-origin cases
                     max_age=int(refresh_token_lifetime.total_seconds()),
-                    domain=settings.SESSION_COOKIE_DOMAIN,
+                    domain=None,
                 )
-
-                # Log successful login
-                logger.info(f"Successful login for user: {username}")
+                logger.debug(f"Refresh token set in cookie: {refresh}")
                 return response
-
             else:
                 # Log failed authentication attempt
                 logger.warning(f"Failed login attempt for username: {username}")

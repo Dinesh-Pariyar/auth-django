@@ -13,11 +13,7 @@ class TokenRefreshMiddleware:
 
     def __call__(self, request):
         urlpath = str(request.path)
-        access_token = request.COOKIES.get("access_token")
-        # print(access_token)
         refresh_token = request.COOKIES.get("refresh_token")
-        # print(refresh_token)
-
         if refresh_token:
             try:
                 refresh = RefreshToken(refresh_token)
@@ -25,22 +21,24 @@ class TokenRefreshMiddleware:
                 request.META["HTTP_AUTHORIZATION"] = f"Bearer {new_access_token}"
 
                 response = self.get_response(request)
-                # response.set_cookie(
-                #     key="access_token",
-                #     value=new_access_token,
-                #     httponly=True,
-                #     secure=True,
-                #     samesite="Strict",
-                #     max_age=refresh.access_token.lifetime.total_seconds(),
-                # )
-
                 response.set_cookie(
                     key="access_token",
                     value=new_access_token,
                     httponly=True,
-                    samesite="Lax",  # Or 'None' for cross-origin scenarios
+                    secure=False,
+                    samesite="None",
                     max_age=int(refresh.access_token.lifetime.total_seconds()),
-                    domain=settings.SESSION_COOKIE_DOMAIN,
+                    domain=None,
+                )
+
+                response.set_cookie(
+                    key="refresh_token",
+                    value=str(refresh),
+                    httponly=True,
+                    secure=False,
+                    samesite="None",
+                    max_age=int(refresh.lifetime.total_seconds()),
+                    domain=None,
                 )
                 print(response)
                 return response
