@@ -75,12 +75,32 @@ class LoginView(generics.GenericAPIView):
                 refresh_token_lifetime = refresh.lifetime
 
                 # Set secure cookies
+                # response.set_cookie(
+                #     key="access_token",
+                #     value=str(refresh.access_token),
+                #     httponly=True,
+                #     secure=settings.SESSION_COOKIE_SECURE,
+                #     samesite=settings.SESSION_COOKIE_SAMESITE,
+                #     max_age=int(access_token_lifetime.total_seconds()),
+                #     domain=settings.SESSION_COOKIE_DOMAIN,
+                # )
+
+                # response.set_cookie(
+                #     key="refresh_token",
+                #     value=str(refresh),
+                #     httponly=True,
+                #     secure=settings.SESSION_COOKIE_SECURE,
+                #     samesite=settings.SESSION_COOKIE_SAMESITE,
+                #     max_age=int(refresh_token_lifetime.total_seconds()),
+                #     domain=settings.SESSION_COOKIE_DOMAIN,
+                # )
+
                 response.set_cookie(
                     key="access_token",
                     value=str(refresh.access_token),
                     httponly=True,
-                    secure=settings.SESSION_COOKIE_SECURE,
-                    samesite=settings.SESSION_COOKIE_SAMESITE,
+                    # secure=False,  # Ensure this works for your environment
+                    samesite="Lax",  # Or 'None' for cross-origin scenarios
                     max_age=int(access_token_lifetime.total_seconds()),
                     domain=settings.SESSION_COOKIE_DOMAIN,
                 )
@@ -89,8 +109,8 @@ class LoginView(generics.GenericAPIView):
                     key="refresh_token",
                     value=str(refresh),
                     httponly=True,
-                    secure=settings.SESSION_COOKIE_SECURE,
-                    samesite=settings.SESSION_COOKIE_SAMESITE,
+                    # secure=False,  # Ensure this works for your environment
+                    samesite="Lax",  # Or 'None' for cross-origin scenarios
                     max_age=int(refresh_token_lifetime.total_seconds()),
                     domain=settings.SESSION_COOKIE_DOMAIN,
                 )

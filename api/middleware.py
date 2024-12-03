@@ -2,6 +2,7 @@ import logging
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.exceptions import AuthenticationFailed
 from django.http import JsonResponse
+from django.conf import settings
 
 logger = logging.getLogger("django")
 
@@ -24,14 +25,24 @@ class TokenRefreshMiddleware:
                 request.META["HTTP_AUTHORIZATION"] = f"Bearer {new_access_token}"
 
                 response = self.get_response(request)
+                # response.set_cookie(
+                #     key="access_token",
+                #     value=new_access_token,
+                #     httponly=True,
+                #     secure=True,
+                #     samesite="Strict",
+                #     max_age=refresh.access_token.lifetime.total_seconds(),
+                # )
+
                 response.set_cookie(
                     key="access_token",
                     value=new_access_token,
                     httponly=True,
-                    secure=True,
-                    samesite="Strict",
-                    max_age=refresh.access_token.lifetime.total_seconds(),
+                    samesite="Lax",  # Or 'None' for cross-origin scenarios
+                    max_age=int(refresh.access_token.lifetime.total_seconds()),
+                    domain=settings.SESSION_COOKIE_DOMAIN,
                 )
+                print(response)
                 return response
             except Exception as e:
                 logger.error(f"Failed to refresh token: {e}")
