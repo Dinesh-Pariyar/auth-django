@@ -17,6 +17,8 @@ from .models import Article
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework.exceptions import PermissionDenied
+
 
 from django.conf import settings
 import logging
@@ -31,48 +33,6 @@ class RegisterView(generics.CreateAPIView):
 
     def get_serializer_context(self):
         return {"request": self.request}
-
-        # class LoginView(generics.GenericAPIView):
-        #     serializer_class = LoginSerializer
-
-        #     def post(self, request, *args, **kwargs):
-        username = request.data.get("username")
-        password = request.data.get("password")
-
-        user = authenticate(username=username, password=password)
-
-        if user is not None:
-            refresh = RefreshToken.for_user(user)
-            user_serializer = UserSerializer(user)
-            response = Response(
-                {
-                    "user": user_serializer.data,
-                },
-                status=status.HTTP_200_OK,
-            )
-            access_token_lifetime = refresh.access_token.lifetime
-            refresh_token_lifetime = refresh.lifetime
-
-            response.set_cookie(
-                key="access_token",
-                value=str(refresh.access_token),
-                httponly=True,
-                secure=True,
-                samesite="Strict",
-                max_age=access_token_lifetime.total_seconds(),
-            )
-
-            response.set_cookie(
-                key="refresh_token",
-                value=str(refresh),
-                httponly=True,
-                secure=True,
-                samesite="Strict",
-                max_age=refresh_token_lifetime.total_seconds(),
-            )
-            return response
-        else:
-            return Response({"error": "Invalid Credentials"}, status=401)
 
 
 class LoginView(generics.GenericAPIView):
@@ -183,19 +143,32 @@ class DashboardView(APIView):
 
 
 class ArticleListCreateView(generics.ListCreateAPIView):
-    queryset = Article.objects.all()
     serializer_class = ArticleSerializer
     permission_classes = [IsAuthenticated, IsMasterOrUserRole]
 
-    def perform_create(self, request, serializer):
-        print("Authorization Header:", request.META.get("HTTP_AUTHORIZATION"))
-        serializer.save(author=self.request.user)
+    def get_queryset(self):
+        user_roles = [role.role.name for role in self.request.user.user_roles.all()]
+        if "MASTER" in user_roles:
+            return Article.objects.all()
+        else:
+            raise PermissionDenied(
+                "Only users with the 'MASTER' role can view all articles."
+            )
+
+    def perform_create(self, serializer):
+        user_roles = [role.role.name for role in self.request.user.user_roles.all()]
+        if "USER" in user_roles:
+            serializer.save(author=self.request.user)
+        else:
+            raise PermissionDenied(
+                "Only users with the 'user' role can create articles."
+            )
 
 
 class ArticleDeatilView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Article.objects.all()
     serializer_class = ArticleSerializer
-    permission_classes = [IsAuthenticated, IsUserRole]
+    permission_classes = [IsAuthenticated, IsMasterOrUserRole]
 
     def get_queryset(self):
         return Article.objects.filter(author=self.request.user)
