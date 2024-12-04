@@ -17,6 +17,13 @@ from .models import Article
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework.exceptions import PermissionDenied
+
+
+from django.conf import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class RegisterView(generics.CreateAPIView):
@@ -32,43 +39,81 @@ class LoginView(generics.GenericAPIView):
     serializer_class = LoginSerializer
 
     def post(self, request, *args, **kwargs):
-        username = request.data.get("username")
-        password = request.data.get("password")
+        try:
+            username = request.data.get("username")
+            password = request.data.get("password")
 
-        user = authenticate(username=username, password=password)
+            # Validate input
+            if not username or not password:
+                return Response(
+                    {"error": "Username and password are required"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        if user is not None:
-            refresh = RefreshToken.for_user(user)
-            user_serializer = UserSerializer(user)
-            response = Response(
-                {
-                    "user": user_serializer.data,
-                },
-                status=status.HTTP_200_OK,
+            # Authenticate user
+            user = authenticate(username=username, password=password)
+
+            if user is not None:
+                if not user.is_active:
+                    logger.warning(f"Login attempt for inactive user: {username}")
+                    return Response(
+                        {"error": "Account is not active"},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+                # Generate tokens
+                refresh = RefreshToken.for_user(user)
+                user_serializer = UserSerializer(user)
+
+                # Prepare response
+                response = Response(
+                    {"user": user_serializer.data}, status=status.HTTP_200_OK
+                )
+
+                # Token configurations
+                access_token_lifetime = refresh.access_token.lifetime
+                refresh_token_lifetime = refresh.lifetime
+
+                # Set secure cookies
+                response.set_cookie(
+                    key="access_token",
+                    value=str(refresh.access_token),
+                    httponly=True,
+                    secure=settings.SESSION_COOKIE_SECURE,
+                    samesite=settings.SESSION_COOKIE_SAMESITE,
+                    max_age=int(access_token_lifetime.total_seconds()),
+                    domain=settings.SESSION_COOKIE_DOMAIN,
+                )
+
+                response.set_cookie(
+                    key="refresh_token",
+                    value=str(refresh),
+                    httponly=True,
+                    secure=settings.SESSION_COOKIE_SECURE,
+                    samesite=settings.SESSION_COOKIE_SAMESITE,
+                    max_age=int(refresh_token_lifetime.total_seconds()),
+                    domain=settings.SESSION_COOKIE_DOMAIN,
+                )
+
+                # Log successful login
+                logger.info(f"Successful login for user: {username}")
+                return response
+
+            else:
+                # Log failed authentication attempt
+                logger.warning(f"Failed login attempt for username: {username}")
+                return Response(
+                    {"error": "Invalid credentials"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+
+        except Exception as e:
+            # Catch and log any unexpected errors
+            logger.error(f"Login error: {str(e)}")
+            return Response(
+                {"error": "An unexpected error occurred"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-            access_token_lifetime = refresh.access_token.lifetime
-            refresh_token_lifetime = refresh.lifetime
-
-            response.set_cookie(
-                key="access_token",
-                value=str(refresh.access_token),
-                httponly=True,
-                secure=True,
-                samesite="Strict",
-                max_age=access_token_lifetime.total_seconds(),
-            )
-
-            response.set_cookie(
-                key="refresh_token",
-                value=str(refresh),
-                httponly=True,
-                secure=True,
-                samesite="Strict",
-                max_age=refresh_token_lifetime.total_seconds(),
-            )
-            return response
-        else:
-            return Response({"error": "Invalid Credentials"}, status=401)
 
 
 class LogoutView(generics.GenericAPIView):
@@ -98,19 +143,32 @@ class DashboardView(APIView):
 
 
 class ArticleListCreateView(generics.ListCreateAPIView):
-    queryset = Article.objects.all()
     serializer_class = ArticleSerializer
     permission_classes = [IsAuthenticated, IsMasterOrUserRole]
 
-    def perform_create(self, request, serializer):
-        print("Authorization Header:", request.META.get("HTTP_AUTHORIZATION"))
-        serializer.save(author=self.request.user)
+    def get_queryset(self):
+        user_roles = [role.role.name for role in self.request.user.user_roles.all()]
+        if "MASTER" in user_roles:
+            return Article.objects.all()
+        else:
+            raise PermissionDenied(
+                "Only users with the 'MASTER' role can view all articles."
+            )
+
+    def perform_create(self, serializer):
+        user_roles = [role.role.name for role in self.request.user.user_roles.all()]
+        if "USER" in user_roles:
+            serializer.save(author=self.request.user)
+        else:
+            raise PermissionDenied(
+                "Only users with the 'user' role can create articles."
+            )
 
 
 class ArticleDeatilView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Article.objects.all()
     serializer_class = ArticleSerializer
-    permission_classes = [IsAuthenticated, IsUserRole]
+    permission_classes = [IsAuthenticated, IsMasterOrUserRole]
 
     def get_queryset(self):
         return Article.objects.filter(author=self.request.user)
